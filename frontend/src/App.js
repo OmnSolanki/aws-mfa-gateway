@@ -95,7 +95,11 @@ function PasswordPanel({ onSuccess, onFail }) {
     setLoading(true);
     setStatus(null);
     try {
-      await signIn({ username: email, password: password });
+      await signIn({username: email, password: password,
+    options: {
+    authFlowType: "USER_PASSWORD_AUTH"
+    }
+});
       setStatus({ type: "success", msg: "✓ Authentication successful" });
       onSuccess("password");
     } catch (err) {
