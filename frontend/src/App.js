@@ -210,27 +210,54 @@ function QRPanel({ onSuccess, onFail }) {
 function OTPPanel({ onSuccess, onFail }) {
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [session, setSession] = useState(null);
 
-  const sendOtp = async () => {
-    if (!email) return;
+  const signIn = async () => {
+    if (!email || !password) return;
     setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-    setStep(2);
-    setStatus({ type: "info", msg: `📱 Code sent to ${email} (demo code: ${DEMO_OTP})` });
+    setStatus(null);
+    try {
+      const { CognitoIdentityProviderClient, InitiateAuthCommand } = await import("@aws-sdk/client-cognito-identity-provider");
+      const client = new CognitoIdentityProviderClient({ region: "us-east-1" });
+      const res = await client.send(new InitiateAuthCommand({
+        AuthFlow: "USER_PASSWORD_AUTH",
+        ClientId: "3jsa77gjlujquci2ttchm3rej6",
+        AuthParameters: { USERNAME: email, PASSWORD: password },
+      }));
+      if (res.ChallengeName === "SOFTWARE_TOKEN_MFA") {
+        setSession(res.Session);
+        setStep(2);
+        setStatus({ type: "info", msg: "📱 Open Google Authenticator and enter the 6-digit code" });
+      } else {
+        setStatus({ type: "success", msg: "✓ Signed in (no MFA required)" });
+        onSuccess("otp");
+      }
+    } catch (err) {
+      setStatus({ type: "error", msg: "✗ " + err.message });
+      onFail("otp");
+    }
     setLoading(false);
   };
 
   const verifyOtp = async () => {
     setLoading(true);
-    await new Promise(r => setTimeout(r, 700));
-    if (otp === DEMO_OTP) {
+    try {
+      const { CognitoIdentityProviderClient, RespondToAuthChallengeCommand } = await import("@aws-sdk/client-cognito-identity-provider");
+      const client = new CognitoIdentityProviderClient({ region: "us-east-1" });
+      await client.send(new RespondToAuthChallengeCommand({
+        ClientId: "3jsa77gjlujquci2ttchm3rej6",
+        ChallengeName: "SOFTWARE_TOKEN_MFA",
+        Session: session,
+        ChallengeResponses: { USERNAME: email, SOFTWARE_TOKEN_MFA_CODE: otp },
+      }));
       setStatus({ type: "success", msg: "✓ MFA verified successfully" });
       onSuccess("otp");
-    } else {
-      setStatus({ type: "error", msg: "✗ Invalid OTP code" });
+    } catch (err) {
+      setStatus({ type: "error", msg: "✗ Invalid code — try again" });
       onFail("otp");
     }
     setLoading(false);
@@ -245,16 +272,20 @@ function OTPPanel({ onSuccess, onFail }) {
         <>
           <div className="field">
             <label>Email</label>
-            <input placeholder="your@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+            <input placeholder="Omns625@gmail.com" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
-          <button className="btn btn-primary" onClick={sendOtp} disabled={loading || !email}>
-            {loading ? "Sending..." : "Send OTP Code"}
+          <div className="field">
+            <label>Password</label>
+            <input type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} />
+          </div>
+          <button className="btn btn-primary" onClick={signIn} disabled={loading || !email || !password}>
+            {loading ? "Signing in..." : "Sign In + Get OTP"}
           </button>
         </>
       ) : (
         <>
           <div className="field">
-            <label>6-digit OTP code</label>
+            <label>6-digit code from Google Authenticator</label>
             <input placeholder="000000" maxLength={6} value={otp} onChange={e => setOtp(e.target.value)} />
           </div>
           <button className="btn btn-primary" onClick={verifyOtp} disabled={loading}>
